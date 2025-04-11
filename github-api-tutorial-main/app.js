@@ -16,7 +16,6 @@ gitHubForm.addEventListener('submit', (e) => {
     document.getElementById('userRepos').innerHTML = '';
 
     if (!githubRepository) {
-        // Fetch all user repositories
         requestUserRepos(gitHubUsername)
             .then(response => {
                 if (!response.ok) {
@@ -116,11 +115,124 @@ function displayRepos(repos, username) {
                             Atualizado em ${new Date(repo.updated_at).toLocaleDateString()}
                         </small>
                     </div>
+                    
+                    <button class="btn btn-sm btn-outline-secondary mt-3 show-commits-btn" 
+                            data-repo="${repo.name}" 
+                            data-owner="${username}">
+                        <i class="fas fa-history me-1"></i> Mostrar Commits
+                    </button>
+                    
+                    <div class="commits-container mt-3" id="commits-${repo.name}" style="display: none;"></div>
                 </div>
             `;
             container.appendChild(repoCard);
         });
+
+        document.querySelectorAll('.show-commits-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const repo = this.getAttribute('data-repo');
+                const owner = this.getAttribute('data-owner');
+                const commitsContainer = document.getElementById(`commits-${repo}`);
+                
+                if (commitsContainer.style.display === 'none') {
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Carregando...';
+                    
+                    if (commitsContainer.innerHTML === '') {
+                        fetchCommits(owner, repo)
+                            .then(commits => {
+                                displayCommits(commits, repo);
+                                this.innerHTML = '<i class="fas fa-eye-slash me-1"></i> Ocultar Commits';
+                                commitsContainer.style.display = 'block';
+                            })
+                            .catch(error => {
+                                commitsContainer.innerHTML = `
+                                    <div class="alert alert-danger">
+                                        Erro ao carregar commits: ${error.message}
+                                    </div>
+                                `;
+                                this.innerHTML = '<i class="fas fa-history me-1"></i> Mostrar Commits';
+                            });
+                    } else {
+                        commitsContainer.style.display = 'block';
+                        this.innerHTML = '<i class="fas fa-eye-slash me-1"></i> Ocultar Commits';
+                    }
+                } else {
+                    commitsContainer.style.display = 'none';
+                    this.innerHTML = '<i class="fas fa-history me-1"></i> Mostrar Commits';
+                }
+            });
+        });
     }
+}
+
+function fetchCommits(owner, repo) {
+    return fetch(`https://api.github.com/repos/${owner}/${repo}/commits`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Não foi possível obter os commits');
+            }
+            return response.json();
+        });
+}
+
+function displayCommits(commits, repoName) {
+    const container = document.getElementById(`commits-${repoName}`);
+    
+    if (!commits || commits.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info">
+                Nenhum commit encontrado neste repositório.
+            </div>
+        `;
+        return;
+    }
+    
+    let commitsHTML = `
+        <div class="commits-list">
+            <h5 class="mb-3"><i class="fas fa-code-commit"></i> Últimos ${commits.length} commits</h5>
+            <div class="list-group">
+    `;
+    
+    commits.slice(0, 5).forEach(commit => {
+        if (!commit.commit) return;
+        
+        const commitDate = commit.commit.author?.date 
+            ? new Date(commit.commit.author.date) 
+            : new Date();
+        const formattedDate = commitDate.toLocaleString();
+        const authorName = commit.commit.author?.name || 'Autor desconhecido';
+        const messageFirstLine = commit.commit.message.split('\n')[0] || 'Sem mensagem';
+        const messageRest = commit.commit.message.split('\n').slice(1).join(' ').substring(0, 100);
+        const sha = commit.sha ? commit.sha.substring(0, 7) : '';
+
+        commitsHTML += `
+            <div class="list-group-item commit-item">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${messageFirstLine}</h6>
+                    <small>${formattedDate}</small>
+                </div>
+                ${messageRest ? `<p class="mb-1 small text-muted">${messageRest}</p>` : ''}
+                <small class="text-muted">
+                    <i class="fas fa-user"></i> ${authorName}
+                    ${sha ? `<span class="ms-2"><i class="fas fa-code-branch"></i> ${sha}</span>` : ''}
+                </small>
+            </div>
+        `;
+    });
+    
+    const repoPath = `${document.querySelector(`button[data-repo="${repoName}"]`).getAttribute('data-owner')}/${repoName}`;
+    
+    commitsHTML += `
+            </div>
+            <a href="https://github.com/${repoPath}/commits" 
+               target="_blank" 
+               class="btn btn-sm btn-link mt-2">
+                Ver todos os commits
+            </a>
+        </div>
+    `;
+    
+    container.innerHTML = commitsHTML;
 }
 
 function displayError(message, username) {
